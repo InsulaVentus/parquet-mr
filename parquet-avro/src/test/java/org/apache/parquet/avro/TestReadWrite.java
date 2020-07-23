@@ -85,6 +85,46 @@ public class TestReadWrite {
   }
 
   @Test
+  public void testWriterRecoversFromException() throws Exception {
+    Schema schema = new Schema.Parser().parse(
+      Resources.getResource("array.avsc").openStream());
+
+    Path file = new Path(createTempFile().getPath());
+
+    try (ParquetWriter<GenericRecord> writer = AvroParquetWriter
+      .<GenericRecord>builder(file)
+      .withSchema(schema)
+      .withConf(testConf)
+      .build()) {
+
+      writer.write(new GenericRecordBuilder(schema).set("myarray", Lists.newArrayList(1, 2, 3)).build());
+
+      // To trigger exception, add array with null element.
+      try {
+        writer.write(new GenericRecordBuilder(schema).set("myarray", Lists.newArrayList(4, null, 5)).build());
+      } catch (RuntimeException e) {
+        // We expect this one to fail.
+      }
+
+      writer.write(new GenericRecordBuilder(schema).set("myarray", Lists.newArrayList(6, 7, 8)).build());
+    }
+
+    List<GenericRecord> records = new ArrayList<>();
+    try (AvroParquetReader<GenericRecord> reader = new AvroParquetReader<>(testConf, file)) {
+      GenericRecord nextRecord;
+      while ((nextRecord = reader.read()) != null) {
+        records.add(nextRecord);
+      }
+      assertEquals("Should find records written before and after exception",
+        Lists.newArrayList(
+          new GenericRecordBuilder(schema).set("myarray", Lists.newArrayList(1, 2, 3)).build(),
+          new GenericRecordBuilder(schema).set("myarray", Lists.newArrayList(6, 7, 8)).build()
+        ), records
+      );
+    }
+  }
+
+  @Test
   public void testEmptyArray() throws Exception {
     Schema schema = new Schema.Parser().parse(
         Resources.getResource("array.avsc").openStream());

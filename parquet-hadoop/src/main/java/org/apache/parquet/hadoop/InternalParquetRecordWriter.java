@@ -130,9 +130,15 @@ class InternalParquetRecordWriter<T> {
   }
 
   public void write(T value) throws IOException, InterruptedException {
-    writeSupport.write(value);
-    ++ recordCount;
-    checkBlockSizeReached();
+    try {
+      writeSupport.write(value);
+      ++ recordCount;
+      checkBlockSizeReached();
+    } catch (RuntimeException e) {
+      flushRowGroupToStore();
+      initStore();
+      throw e;
+    }
   }
 
   /**
